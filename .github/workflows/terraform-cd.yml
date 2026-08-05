@@ -40,6 +40,7 @@ env:
   ARM_ACCESS_KEY: ${{ secrets.AZURE_BACKEND_ACCESS_KEY }}
 
   TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
+
 jobs:
   terraform:
     name: Terraform ${{ inputs.operation }} - ${{ inputs.client }}
@@ -50,6 +51,10 @@ jobs:
         shell: bash
 
     steps:
+      # -------------------------------------------------------
+      # Checkout and Terraform setup
+      # -------------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -60,6 +65,10 @@ jobs:
 
       - name: Display Terraform version
         run: terraform version
+
+      # -------------------------------------------------------
+      # Azure authentication
+      # -------------------------------------------------------
 
       - name: Azure login using Service Principal
         uses: azure/login@v2
@@ -78,7 +87,11 @@ jobs:
             --query "{subscription:name,subscriptionId:id,tenantId:tenantId}" \
             --output table
 
-      - name: Verify required GitHub variables
+      # -------------------------------------------------------
+      # Verify GitHub configuration
+      # -------------------------------------------------------
+
+      - name: Verify required GitHub variables and secrets
         run: |
           if [ -z "${{ vars.BACKEND_RESOURCE_GROUP }}" ]; then
             echo "BACKEND_RESOURCE_GROUP is missing."
@@ -100,6 +113,32 @@ jobs:
             exit 1
           fi
 
+          if [ -z "${{ secrets.AZURE_BACKEND_ACCESS_KEY }}" ]; then
+            echo "AZURE_BACKEND_ACCESS_KEY is missing."
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.TF_VAR_ADMIN_PASSWORD }}" ]; then
+            echo "TF_VAR_ADMIN_PASSWORD is missing."
+            exit 1
+          fi
+
+      - name: Validate alert email address
+        run: |
+          ALERT_EMAIL="${{ vars.ALERT_EMAIL_ADDRESS }}"
+          ALERT_EMAIL="$(printf '%s' "$ALERT_EMAIL" | tr -d '\r' | xargs)"
+
+          if [[ ! "$ALERT_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+            echo "ALERT_EMAIL_ADDRESS is invalid."
+            exit 1
+          fi
+
+          echo "Alert email format is valid."
+
+      # -------------------------------------------------------
+      # Generate backend configuration
+      # -------------------------------------------------------
+
       - name: Generate backend configuration
         run: |
           cat > backend.hcl <<EOF
@@ -107,7 +146,6 @@ jobs:
           storage_account_name = "${{ vars.BACKEND_STORAGE_ACCOUNT }}"
           container_name       = "${{ vars.BACKEND_CONTAINER }}"
           key                  = "clients/${{ inputs.client }}/terraform.tfstate"
-          use_azuread_auth     = true
           EOF
 
       - name: Verify backend configuration
@@ -118,36 +156,74 @@ jobs:
           echo "Backend container       : ${{ vars.BACKEND_CONTAINER }}"
           echo "Backend state key       : clients/${{ inputs.client }}/terraform.tfstate"
 
+      # -------------------------------------------------------
+      # Generate client tfvars safely
+      # -------------------------------------------------------
+
       - name: Generate client variable file
         run: |
           SOURCE_FILE="environments/${{ inputs.client }}/${{ inputs.client }}.tfvars.example"
 
           if [ ! -f "$SOURCE_FILE" ]; then
-            echo "File not found: $SOURCE_FILE"
+            echo "Client variable file not found: $SOURCE_FILE"
             exit 1
           fi
 
           cp "$SOURCE_FILE" selected-client.tfvars
 
-          sed -i \
-            -e 's|YOUR_AZURE_TENANT_ID|${{ secrets.AZURE_TENANT_ID }}|g' \
-            -e 's|Your Tenant ID|${{ secrets.AZURE_TENANT_ID }}|g' \
-            -e 's|your tenant id|${{ secrets.AZURE_TENANT_ID }}|g' \
-            -e 's|your-tenant-id|${{ secrets.AZURE_TENANT_ID }}|g' \
-            -e 's|your-real-tenant-id|${{ secrets.AZURE_TENANT_ID }}|g' \
-            -e 's|YOUR_ALERT_EMAIL_ADDRESS|${{ vars.ALERT_EMAIL_ADDRESS }}|g' \
-            -e 's|Your Email Address|${{ vars.ALERT_EMAIL_ADDRESS }}|g' \
-            -e 's|your Email address|${{ vars.ALERT_EMAIL_ADDRESS }}|g' \
-            -e 's|your email address|${{ vars.ALERT_EMAIL_ADDRESS }}|g' \
-            selected-client.tfvars
+          TENANT_ID="${{ secrets.AZURE_TENANT_ID }}"
+          ALERT_EMAIL="${{ vars.ALERT_EMAIL_ADDRESS }}"
+
+          TENANT_ID="$(printf '%s' "$TENANT_ID" | tr -d '\r' | xargs)"
+          ALERT_EMAIL="$(printf '%s' "$ALERT_EMAIL" | tr -d '\r' | xargs)"
+
+          if grep -Eq '^[[:space:]]*tenant_id[[:space:]]*=' selected-client.tfvars; then
+            sed -i -E \
+              "s|^[[:space:]]*tenant_id[[:space:]]*=.*$|tenant_id = \"$TENANT_ID\"|" \
+              selected-client.tfvars
+          else
+            echo "tenant_id = \"$TENANT_ID\"" >> selected-client.tfvars
+          fi
+
+          if grep -Eq '^[[:space:]]*alert_email_address[[:space:]]*=' selected-client.tfvars; then
+            sed -i -E \
+              "s|^[[:space:]]*alert_email_address[[:space:]]*=.*$|alert_email_address = \"$ALERT_EMAIL\"|" \
+              selected-client.tfvars
+          else
+            echo "alert_email_address = \"$ALERT_EMAIL\"" >> selected-client.tfvars
+          fi
+
+          echo "Tenant ID and alert email were added to selected-client.tfvars."
 
       - name: Format generated client variables
         run: terraform fmt selected-client.tfvars
 
+      - name: Validate generated client values
+        run: |
+          ALERT_EMAIL="${{ vars.ALERT_EMAIL_ADDRESS }}"
+          ALERT_EMAIL="$(printf '%s' "$ALERT_EMAIL" | tr -d '\r' | xargs)"
+
+          if ! grep -Eq \
+            '^tenant_id[[:space:]]*=[[:space:]]*"[0-9a-fA-F-]{36}"$' \
+            selected-client.tfvars; then
+            echo "A valid tenant_id was not generated."
+            exit 1
+          fi
+
+          if ! grep -Fq \
+            "alert_email_address = \"$ALERT_EMAIL\"" \
+            selected-client.tfvars; then
+            echo "The alert email was not correctly generated."
+            exit 1
+          fi
+
+          echo "Generated tenant ID is valid."
+          echo "Generated alert email is valid."
+
       - name: Check generated files for placeholders
         run: |
           if grep -Ein \
-            'YOUR_AZURE_TENANT_ID|Your Tenant ID|your tenant id|your-tenant-id|your-real-tenant-id|YOUR_ALERT_EMAIL_ADDRESS|Your Email Address|your Email address|your email address|Your Azure Subscription ID|Your backend resource group|Your Storage Account' \
+            'YOUR_|Your Tenant ID|your tenant id|your-tenant-id|your-real-tenant-id|Your Email Address|your Email address|your email address|Your Azure Subscription ID|Your backend resource group|Your Storage Account|placeholder|change_me' \
             backend.hcl selected-client.tfvars; then
 
             echo "Placeholder values remain in generated files."
@@ -156,9 +232,12 @@ jobs:
 
           echo "No placeholder values remain."
 
+      # -------------------------------------------------------
+      # Terraform quality checks
+      # -------------------------------------------------------
+
       - name: Terraform format check
-        run: |
-          terraform fmt -check -recursive
+        run: terraform fmt -check -recursive
 
       - name: Terraform initialize
         run: |
@@ -169,6 +248,10 @@ jobs:
 
       - name: Terraform validate
         run: terraform validate -no-color
+
+      # -------------------------------------------------------
+      # Terraform plan
+      # -------------------------------------------------------
 
       - name: Terraform plan
         if: inputs.operation == 'plan'
@@ -198,6 +281,10 @@ jobs:
           retention-days: 5
           if-no-files-found: error
 
+      # -------------------------------------------------------
+      # Terraform apply
+      # -------------------------------------------------------
+
       - name: Create apply plan
         if: inputs.operation == 'apply'
         run: |
@@ -214,6 +301,10 @@ jobs:
             -input=false \
             -auto-approve \
             "${{ inputs.client }}-apply.tfplan"
+
+      # -------------------------------------------------------
+      # Terraform destroy
+      # -------------------------------------------------------
 
       - name: Create destroy plan
         if: inputs.operation == 'destroy'
@@ -232,6 +323,10 @@ jobs:
             -input=false \
             -auto-approve \
             "${{ inputs.client }}-destroy.tfplan"
+
+      # -------------------------------------------------------
+      # Cleanup
+      # -------------------------------------------------------
 
       - name: Azure logout
         if: always()
