@@ -246,17 +246,6 @@ clients/client-c/terraform.tfstate
 | GitHub Actions | CI/CD (Future) |
 | Visual Studio Code | Development |
 
----
-
-# ⚡ Quick Start
-
-Clone the repository
-
-```bash
-git clone https://github.com/saikrishna844/terraform-multi-tenant-azure-platform.git
-
-cd terraform-multi-tenant-azure-platform
-```
 
 ---
 
