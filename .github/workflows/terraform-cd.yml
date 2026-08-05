@@ -94,11 +94,12 @@ jobs:
 
       - name: Generate Backend Configuration
         run: |
-          cp environments/${{ github.event.inputs.client }}/${{ github.event.inputs.client }}.backend.hcl backend.hcl
-
-      - name: Verify Backend Configuration
-        run: |
-          cat backend.hcl
+          cat > backend.hcl <<EOF
+          resource_group_name  = "${{ vars.BACKEND_RESOURCE_GROUP }}"
+          storage_account_name = "${{ vars.BACKEND_STORAGE_ACCOUNT }}"
+          container_name       = "${{ vars.BACKEND_CONTAINER }}"
+          key                  = "clients/${{ inputs.client }}/terraform.tfstate"
+          EOF
 
       ##########################################################
       # TFVARS
