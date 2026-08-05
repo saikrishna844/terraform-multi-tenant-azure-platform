@@ -1122,8 +1122,6 @@ I enjoy designing secure, scalable, and automated cloud infrastructure using Inf
 
 ## 📫 Connect With Me
 
-> Replace these placeholders with your actual links.
-
 - 💼 LinkedIn: https://www.linkedin.com/in/saikrishna-vempati
 - 🌐 Portfolio: https://saikrishnavempati.com
 - 📝 Hashnode: https://saikrishnavempati.hashnode.dev
