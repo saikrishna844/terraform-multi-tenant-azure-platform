@@ -8,6 +8,7 @@ environments/*/*.backend.hcl
 *.tfstate
 *.tfstate.*
 *.tfplan
+backend.tf
 
 # Variable files
 terraform.tfvars
