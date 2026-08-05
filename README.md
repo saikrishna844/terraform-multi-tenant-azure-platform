@@ -1,15 +1,22 @@
 # 🚀 Terraform Multi-Tenant Azure Platform
 
 <p align="center">
+<img src="https://img.shields.io/badge/Azure-Cloud-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white"/>
 
-![Terraform](https://img.shields.io/badge/Terraform-v1.11+-623CE4?style=for-the-badge&logo=terraform)
-![Azure](https://img.shields.io/badge/Microsoft-Azure-0078D4?style=for-the-badge&logo=microsoftazure)
-![GitHub Actions](https://img.shields.io/badge/GitHub-Actions-2088FF?style=for-the-badge&logo=githubactions)
-![IaC](https://img.shields.io/badge/Infrastructure_as_Code-Terraform-success?style=for-the-badge)
-![Platform](https://img.shields.io/badge/Multi-Tenant-Enterprise-blue?style=for-the-badge)
+<img src="https://img.shields.io/badge/Terraform-IaC-844FBA?style=for-the-badge&logo=terraform&logoColor=white"/>
 
-</p>
+<img src="https://img.shields.io/badge/GitHub-Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white"/>
 
+<img src="https://img.shields.io/badge/Ansible-Automation-EE0000?style=for-the-badge&logo=ansible&logoColor=white"/>
+
+<img src="https://img.shields.io/badge/YAML-Workflows-black?style=for-the-badge&logo=yaml&logoColor=white"/>
+
+<img src="https://img.shields.io/badge/Multi--Tenant-Architecture-success?style=for-the-badge"/>
+
+<img src="https://img.shields.io/badge/Remote_Backend-Azure_Storage-blue?style=for-the-badge"/>
+
+<img src="https://img.shields.io/badge/Enterprise-Ready-orange?style=for-the-badge"/>
+<p>  
 ---
 
 ## 🌍 Overview
