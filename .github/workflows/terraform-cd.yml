@@ -2,120 +2,25 @@ name: Terraform CD
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
-
-env:
-  TF_IN_AUTOMATION: "true"
-  TF_INPUT: "false"
+    inputs:
+      client:
+        description: "Client deployment will be enabled after Azure OIDC setup"
+        required: true
+        type: choice
+        options:
+          - client-a
+          - client-b
+          - client-c
 
 jobs:
-  terraform-plan:
-    name: Terraform Plan
+  oidc-not-configured:
+    name: Deployment Setup Required
     runs-on: ubuntu-latest
 
-    env:
-      TF_VAR_resource_group_name: "rg-enterprise-dev"
-      TF_VAR_location: "centralindia"
-      TF_VAR_subscription_id: ${{ fromJSON(secrets.MY_CRED).subscriptionId }}
-      TF_VAR_tenant_id: ${{ fromJSON(secrets.MY_CRED).tenantId }}
-      TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
-      TF_VAR_enable_rbac_assignments: "false"
-      TF_VAR_enable_policy_assignments: "false"
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.13.0"
-
-      - name: Azure Login
-        uses: azure/login@v2.3.0
-        with:
-          creds: ${{ secrets.MY_CRED }}
-
-      - name: Verify Azure Subscription
+      - name: Display setup status
         run: |
-          az account show \
-            --query "{Subscription:name,SubscriptionId:id,TenantId:tenantId}" \
-            --output table
-
-      - name: Check Terraform formatting
-        run: terraform fmt -check -recursive
-
-      - name: Initialize remote backend
-        env:
-          ARM_ACCESS_KEY: ${{ secrets.AZURE_BACKEND_ACCESS_KEY }}
-        run: terraform init -reconfigure -input=false
-
-      - name: Validate Terraform configuration
-        run: terraform validate
-
-      - name: Create Terraform Plan
-        env:
-          ARM_ACCESS_KEY: ${{ secrets.AZURE_BACKEND_ACCESS_KEY }}
-        run: terraform plan -input=false -out=tfplan
-
-      - name: Display Terraform Plan
-        run: terraform show -no-color tfplan
-
-  terraform-apply:
-    name: Terraform Apply
-    runs-on: ubuntu-latest
-    needs: terraform-plan
-
-    environment:
-      name: production
-
-    env:
-      TF_VAR_resource_group_name: "rg-enterprise-dev"
-      TF_VAR_location: "centralindia"
-      TF_VAR_subscription_id: ${{ fromJSON(secrets.MY_CRED).subscriptionId }}
-      TF_VAR_tenant_id: ${{ fromJSON(secrets.MY_CRED).tenantId }}
-      TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
-      TF_VAR_enable_rbac_assignments: "false"
-      TF_VAR_enable_policy_assignments: "false"
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.13.0"
-
-      - name: Azure Login
-        uses: azure/login@v2.3.0
-        with:
-          creds: ${{ secrets.MY_CRED }}
-
-      - name: Verify Azure Subscription
-        run: |
-          az account show \
-            --query "{Subscription:name,SubscriptionId:id,TenantId:tenantId}" \
-            --output table
-
-      - name: Initialize remote backend
-        env:
-          ARM_ACCESS_KEY: ${{ secrets.AZURE_BACKEND_ACCESS_KEY }}
-        run: terraform init -reconfigure -input=false
-
-      - name: Create approved deployment plan
-        env:
-          ARM_ACCESS_KEY: ${{ secrets.AZURE_BACKEND_ACCESS_KEY }}
-        run: terraform plan -input=false -out=tfplan
-
-      - name: Display approved deployment plan
-        run: terraform show -no-color tfplan
-
-      - name: Terraform Apply
-        env:
-          ARM_ACCESS_KEY: ${{ secrets.AZURE_BACKEND_ACCESS_KEY }}
-        run: terraform apply -input=false -auto-approve tfplan
-
-        
+          echo "Terraform CD is currently disabled."
+          echo "Selected client: ${{ inputs.client }}"
+          echo "Configure Azure OIDC, GitHub environments, backend variables,"
+          echo "and VM password secrets before enabling apply."
