@@ -1,0 +1,48 @@
+resource_group_name = "rg-client-c-prod"
+# location            = "centralindia"
+
+client_name   = "client-c"
+environment   = "prod"
+owner         = "Sai Krishna"
+cost_center   = "Cloud-C"
+unique_suffix = "260804c"
+
+vnet_name     = "vnet-client-c-prod"
+address_space = ["10.30.0.0/16"]
+
+subnet_names = [
+  "subnet-web",
+  "subnet-app",
+  "subnet-db"
+]
+
+subnet_prefixes = [
+  "10.30.1.0/24",
+  "10.30.2.0/24",
+  "10.30.3.0/24"
+]
+
+tenant_id = "Your Tenant ID"
+
+admin_username      = "azureadmin"
+alert_email_address = "Your Mail ID" 
+
+enable_rbac_assignments   = false
+enable_policy_assignments = false
+
+bastion_subnet_prefix          = "10.30.4.0/26"
+private_endpoint_subnet_prefix = "10.30.5.0/24"
+
+location = "centralindia"
+
+vm_size = "Standard_DS1_v2"
+
+allowed_locations = [
+  "centralindia"
+]
+
+allowed_vm_sizes = [
+  "Standard_DS1_v2"
+]
+
+

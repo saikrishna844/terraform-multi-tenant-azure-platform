@@ -1,0 +1,50 @@
+resource_group_name = "rg-client-b-test"
+# location            = "centralindia"
+
+client_name   = "client-b"
+environment   = "test"
+owner         = "Sai Krishna"
+cost_center   = "Cloud-B"
+unique_suffix = "260804b"
+
+vnet_name     = "vnet-client-b-test"
+address_space = ["10.20.0.0/16"]
+
+subnet_names = [
+  "subnet-web",
+  "subnet-app",
+  "subnet-db"
+]
+
+subnet_prefixes = [
+  "10.20.1.0/24",
+  "10.20.2.0/24",
+  "10.20.3.0/24"
+]
+
+tenant_id = "Your Tenant ID"
+
+admin_username      = "azureadmin"
+alert_email_address = "Your Mail ID"
+
+enable_rbac_assignments   = false
+enable_policy_assignments = false
+
+bastion_subnet_prefix          = "10.20.4.0/26"
+private_endpoint_subnet_prefix = "10.20.5.0/24"
+
+location = "eastus"
+
+vm_size = "Standard_DS1_v2"
+
+allowed_locations = [
+  "eastus"
+]
+
+allowed_vm_sizes = [
+  "Standard_DS1_v2"
+]
+
+
+
+

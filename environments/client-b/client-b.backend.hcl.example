@@ -1,0 +1,8 @@
+resource_group_name  = "Your backend resource group"
+storage_account_name = "Your Storage Account"
+container_name       = "tfstate"
+key = "clients/client-b/terraform.tfstate"
+
+subscription_id = "Your Subscription ID"
+tenant_id       = "Your Tenant Id"
+use_cli         = true

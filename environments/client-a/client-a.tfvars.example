@@ -1,0 +1,47 @@
+resource_group_name = "rg-client-a-dev"
+# location            = "centralindia"
+
+client_name   = "client-a"
+environment   = "dev"
+owner         = "Sai Krishna"
+cost_center   = "Cloud-A"
+unique_suffix = "260804a"
+
+vnet_name     = "vnet-client-a-dev"
+address_space = ["10.10.0.0/16"]
+
+subnet_names = [
+  "subnet-web",
+  "subnet-app",
+  "subnet-db"
+]
+
+subnet_prefixes = [
+  "10.10.1.0/24",
+  "10.10.2.0/24",
+  "10.10.3.0/24"
+]
+
+tenant_id = "Your Tenant ID" 
+
+admin_username = "azureadmin"
+#admin_password      = "DO-NOT-COMMIT-A-REAL-PASSWORD"
+alert_email_address = "your Email address"
+
+enable_rbac_assignments   = false
+enable_policy_assignments = false
+
+bastion_subnet_prefix          = "10.10.4.0/26"
+private_endpoint_subnet_prefix = "10.10.5.0/24"
+
+location = "westus"
+
+vm_size = "Standard_DS1_v2"
+
+allowed_locations = [
+  "westus"
+]
+
+allowed_vm_sizes = [
+  "Standard_DS1_v2"
+]

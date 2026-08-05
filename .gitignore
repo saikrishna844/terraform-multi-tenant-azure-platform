@@ -1,0 +1,18 @@
+# Real client configuration
+environments/*/*.tfvars
+environments/*/*.backend.hcl
+
+# Terraform state and plans
+.terraform/
+.terraform-backup/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# Variable files
+terraform.tfvars
+*.auto.tfvars
+
+# Backup files
+*.backup
+*.bak
