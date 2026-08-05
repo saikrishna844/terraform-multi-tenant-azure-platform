@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       client:
-        description: "Client deployment will be enabled after Azure OIDC setup"
+        description: "Select the client to deploy"
         required: true
         type: choice
         options:
@@ -12,15 +12,114 @@ on:
           - client-b
           - client-c
 
+      operation:
+        description: "Select the Terraform operation"
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-${{ inputs.client }}
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: true
+  TF_INPUT: false
+  TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
+
 jobs:
-  oidc-not-configured:
-    name: Deployment Setup Required
+  plan:
+    name: Plan ${{ inputs.client }}
     runs-on: ubuntu-latest
+    environment: ${{ inputs.client }}
 
     steps:
-      - name: Display setup status
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.6"
+          terraform_wrapper: false
+
+      - name: Azure login using OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create backend configuration
+        shell: bash
         run: |
-          echo "Terraform CD is currently disabled."
-          echo "Selected client: ${{ inputs.client }}"
-          echo "Configure Azure OIDC, GitHub environments, backend variables,"
-          echo "and VM password secrets before enabling apply."
+          cat > backend.auto.hcl <<EOF
+          resource_group_name  = "${{ vars.BACKEND_RESOURCE_GROUP }}"
+          storage_account_name = "${{ vars.BACKEND_STORAGE_ACCOUNT }}"
+          container_name       = "${{ vars.BACKEND_CONTAINER }}"
+          key                  = "clients/${{ inputs.client }}/terraform.tfstate"
+          subscription_id      = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          tenant_id            = "${{ secrets.AZURE_TENANT_ID }}"
+          use_cli              = true
+          EOF
+
+      - name: Create client variable file
+        shell: bash
+        run: |
+          cp "environments/${{ inputs.client }}/${{ inputs.client }}.tfvars.example" \
+             "selected-client.tfvars"
+
+          sed -i \
+            's/YOUR_AZURE_TENANT_ID/${{ secrets.AZURE_TENANT_ID }}/g' \
+            selected-client.tfvars
+
+      - name: Terraform format check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform initialize
+        run: |
+          terraform init \
+            -reconfigure \
+            -input=false \
+            -backend-config=backend.auto.hcl
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -var-file=selected-client.tfvars \
+            -out="${{ inputs.client }}.tfplan"
+
+      - name: Show plan
+        run: |
+          terraform show \
+            -no-color \
+            "${{ inputs.client }}.tfplan" \
+            > "${{ inputs.client }}-plan.txt"
+
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.client }}-terraform-plan
+          path: |
+            ${{ inputs.client }}.tfplan
+            ${{ inputs.client }}-plan.txt
+          retention-days: 5
+
+      - name: Terraform apply
+        if: inputs.operation == 'apply'
+        run: |
+          terraform apply \
+            -input=false \
+            -auto-approve \
+            "${{ inputs.client }}.tfplan"
