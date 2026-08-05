@@ -37,15 +37,23 @@ jobs:
 
     steps:
 
+    #########################################################
+    # Checkout
+    #########################################################
+
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    #########################################################
+    # Setup Terraform
+    #########################################################
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
 
-    #####################################################
-    # Azure Login using Service Principal
-    #####################################################
+    #########################################################
+    # Azure Login
+    #########################################################
 
     - name: Azure Login
       uses: azure/login@v2
@@ -58,74 +66,106 @@ jobs:
             "tenantId":"${{ secrets.AZURE_TENANT_ID }}"
           }
 
-    #####################################################
+    #########################################################
+    # Export ARM Variables
+    #########################################################
+
+    - name: Export ARM Environment Variables
+      run: |
+        echo "ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $GITHUB_ENV
+        echo "ARM_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> $GITHUB_ENV
+        echo "ARM_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
+        echo "ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $GITHUB_ENV
+
+    #########################################################
     # Generate Backend Configuration
-    #####################################################
+    #########################################################
 
     - name: Generate Backend Config
       run: |
         cp environments/${{ github.event.inputs.client }}/${{ github.event.inputs.client }}.backend.hcl.example backend.hcl
 
-    #####################################################
-    # Generate tfvars
-    #####################################################
+    #########################################################
+    # Generate Terraform Variables
+    #########################################################
 
     - name: Generate Terraform Variables
       run: |
         cp environments/${{ github.event.inputs.client }}/${{ github.event.inputs.client }}.tfvars.example terraform.tfvars
 
-    #####################################################
+    #########################################################
     # Terraform Init
-    #####################################################
+    #########################################################
 
     - name: Terraform Init
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       run: |
         terraform init \
           -backend-config=backend.hcl
 
-    #####################################################
+    #########################################################
     # Terraform Validate
-    #####################################################
+    #########################################################
 
     - name: Terraform Validate
       run: terraform validate
 
-    #####################################################
-    # Terraform Format Check
-    #####################################################
+    #########################################################
+    # Terraform Format
+    #########################################################
 
     - name: Terraform Format
-      run: terraform fmt -check
+      run: terraform fmt -check -recursive
 
-    #####################################################
+    #########################################################
     # Terraform Plan
-    #####################################################
+    #########################################################
 
     - name: Terraform Plan
       if: github.event.inputs.operation == 'plan'
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
       run: |
         terraform plan \
           -var-file=terraform.tfvars \
           -out=tfplan
 
-    #####################################################
+    #########################################################
     # Terraform Apply
-    #####################################################
+    #########################################################
 
     - name: Terraform Apply
       if: github.event.inputs.operation == 'apply'
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
       run: |
         terraform apply \
-          -auto-approve \
-          -var-file=terraform.tfvars
+          -auto-approve
 
-    #####################################################
+    #########################################################
     # Terraform Destroy
-    #####################################################
+    #########################################################
 
     - name: Terraform Destroy
       if: github.event.inputs.operation == 'destroy'
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
       run: |
         terraform destroy \
-          -auto-approve \
-          -var-file=terraform.tfvars
+          -auto-approve
