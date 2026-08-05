@@ -1,3 +1,339 @@
+# #  name: Terraform CD
+
+# on:
+#   workflow_dispatch:
+#     inputs:
+#       client:
+#         description: "Select client"
+#         required: true
+#         type: choice
+#         options:
+#           - client-a
+#           - client-b
+#           - client-c
+
+#       operation:
+#         description: "Select Terraform operation"
+#         required: true
+#         type: choice
+#         options:
+#           - plan
+#           - apply
+#           - destroy
+
+# permissions:
+#   contents: read
+
+# concurrency:
+#   group: terraform-${{ inputs.client }}
+#   cancel-in-progress: false
+
+# env:
+#   TF_IN_AUTOMATION: "true"
+#   TF_INPUT: "false"
+
+#   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+#   ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+#   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+#   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+#   ARM_ACCESS_KEY: ${{ secrets.AZURE_BACKEND_ACCESS_KEY }}
+
+#   TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
+
+# jobs:
+#   terraform:
+#     name: Terraform ${{ inputs.operation }} - ${{ inputs.client }}
+#     runs-on: ubuntu-latest
+
+#     defaults:
+#       run:
+#         shell: bash
+
+#     steps:
+#       # -------------------------------------------------------
+#       # Checkout and Terraform setup
+#       # -------------------------------------------------------
+
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+
+#       - name: Setup Terraform
+#         uses: hashicorp/setup-terraform@v3
+#         with:
+#           terraform_wrapper: false
+
+#       - name: Display Terraform version
+#         run: terraform version
+
+#       # -------------------------------------------------------
+#       # Azure authentication
+#       # -------------------------------------------------------
+
+#       - name: Azure login using Service Principal
+#         uses: azure/login@v2
+#         with:
+#           creds: |
+#             {
+#               "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+#               "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+#               "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+#               "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+#             }
+
+#       - name: Confirm Azure account
+#         run: |
+#           az account show \
+#             --query "{subscription:name,subscriptionId:id,tenantId:tenantId}" \
+#             --output table
+
+#       # -------------------------------------------------------
+#       # Verify GitHub configuration
+#       # -------------------------------------------------------
+
+#       - name: Verify required GitHub variables and secrets
+#         run: |
+#           if [ -z "${{ vars.BACKEND_RESOURCE_GROUP }}" ]; then
+#             echo "BACKEND_RESOURCE_GROUP is missing."
+#             exit 1
+#           fi
+
+#           if [ -z "${{ vars.BACKEND_STORAGE_ACCOUNT }}" ]; then
+#             echo "BACKEND_STORAGE_ACCOUNT is missing."
+#             exit 1
+#           fi
+
+#           if [ -z "${{ vars.BACKEND_CONTAINER }}" ]; then
+#             echo "BACKEND_CONTAINER is missing."
+#             exit 1
+#           fi
+
+#           if [ -z "${{ vars.ALERT_EMAIL_ADDRESS }}" ]; then
+#             echo "ALERT_EMAIL_ADDRESS is missing."
+#             exit 1
+#           fi
+
+#           if [ -z "${{ secrets.AZURE_BACKEND_ACCESS_KEY }}" ]; then
+#             echo "AZURE_BACKEND_ACCESS_KEY is missing."
+#             exit 1
+#           fi
+
+#           if [ -z "${{ secrets.TF_VAR_ADMIN_PASSWORD }}" ]; then
+#             echo "TF_VAR_ADMIN_PASSWORD is missing."
+#             exit 1
+#           fi
+
+#       - name: Validate alert email address
+#         run: |
+#           ALERT_EMAIL="${{ vars.ALERT_EMAIL_ADDRESS }}"
+#           ALERT_EMAIL="$(printf '%s' "$ALERT_EMAIL" | tr -d '\r' | xargs)"
+
+#           if [[ ! "$ALERT_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+#             echo "ALERT_EMAIL_ADDRESS is invalid."
+#             exit 1
+#           fi
+
+#           echo "Alert email format is valid."
+
+#       # -------------------------------------------------------
+#       # Generate backend configuration
+#       # -------------------------------------------------------
+
+#       - name: Generate backend configuration
+#         run: |
+#           cat > backend.hcl <<EOF
+#           resource_group_name  = "${{ vars.BACKEND_RESOURCE_GROUP }}"
+#           storage_account_name = "${{ vars.BACKEND_STORAGE_ACCOUNT }}"
+#           container_name       = "${{ vars.BACKEND_CONTAINER }}"
+#           key                  = "clients/${{ inputs.client }}/terraform.tfstate"
+#           EOF
+
+#       - name: Verify backend configuration
+#         run: |
+#           echo "Selected client         : ${{ inputs.client }}"
+#           echo "Backend resource group  : ${{ vars.BACKEND_RESOURCE_GROUP }}"
+#           echo "Backend storage account : ${{ vars.BACKEND_STORAGE_ACCOUNT }}"
+#           echo "Backend container       : ${{ vars.BACKEND_CONTAINER }}"
+#           echo "Backend state key       : clients/${{ inputs.client }}/terraform.tfstate"
+
+#       # -------------------------------------------------------
+#       # Generate client tfvars safely
+#       # -------------------------------------------------------
+
+#       - name: Generate client variable file
+#         run: |
+#           SOURCE_FILE="environments/${{ inputs.client }}/${{ inputs.client }}.tfvars.example"
+
+#           if [ ! -f "$SOURCE_FILE" ]; then
+#             echo "Client variable file not found: $SOURCE_FILE"
+#             exit 1
+#           fi
+
+#           cp "$SOURCE_FILE" selected-client.tfvars
+
+#           TENANT_ID="${{ secrets.AZURE_TENANT_ID }}"
+#           ALERT_EMAIL="${{ vars.ALERT_EMAIL_ADDRESS }}"
+
+#           TENANT_ID="$(printf '%s' "$TENANT_ID" | tr -d '\r' | xargs)"
+#           ALERT_EMAIL="$(printf '%s' "$ALERT_EMAIL" | tr -d '\r' | xargs)"
+
+#           if grep -Eq '^[[:space:]]*tenant_id[[:space:]]*=' selected-client.tfvars; then
+#             sed -i -E \
+#               "s|^[[:space:]]*tenant_id[[:space:]]*=.*$|tenant_id = \"$TENANT_ID\"|" \
+#               selected-client.tfvars
+#           else
+#             echo "tenant_id = \"$TENANT_ID\"" >> selected-client.tfvars
+#           fi
+
+#           if grep -Eq '^[[:space:]]*alert_email_address[[:space:]]*=' selected-client.tfvars; then
+#             sed -i -E \
+#               "s|^[[:space:]]*alert_email_address[[:space:]]*=.*$|alert_email_address = \"$ALERT_EMAIL\"|" \
+#               selected-client.tfvars
+#           else
+#             echo "alert_email_address = \"$ALERT_EMAIL\"" >> selected-client.tfvars
+#           fi
+
+#           echo "Tenant ID and alert email were added to selected-client.tfvars."
+
+#       - name: Format generated client variables
+#         run: terraform fmt selected-client.tfvars
+
+#       - name: Validate generated client values
+#         run: |
+#           ALERT_EMAIL="${{ vars.ALERT_EMAIL_ADDRESS }}"
+#           ALERT_EMAIL="$(printf '%s' "$ALERT_EMAIL" | tr -d '\r' | xargs)"
+
+#           if ! grep -Eq \
+#             '^tenant_id[[:space:]]*=[[:space:]]*"[0-9a-fA-F-]{36}"$' \
+#             selected-client.tfvars; then
+#             echo "A valid tenant_id was not generated."
+#             exit 1
+#           fi
+
+#           if ! grep -Fq \
+#             "alert_email_address = \"$ALERT_EMAIL\"" \
+#             selected-client.tfvars; then
+#             echo "The alert email was not correctly generated."
+#             exit 1
+#           fi
+
+#           echo "Generated tenant ID is valid."
+#           echo "Generated alert email is valid."
+
+#       - name: Check generated files for placeholders
+#         run: |
+#           if grep -Ein \
+#             'YOUR_|Your Tenant ID|your tenant id|your-tenant-id|your-real-tenant-id|Your Email Address|your Email address|your email address|Your Azure Subscription ID|Your backend resource group|Your Storage Account|placeholder|change_me' \
+#             backend.hcl selected-client.tfvars; then
+
+#             echo "Placeholder values remain in generated files."
+#             exit 1
+#           fi
+
+#           echo "No placeholder values remain."
+
+#       # -------------------------------------------------------
+#       # Terraform quality checks
+#       # -------------------------------------------------------
+
+#       - name: Terraform format check
+#         run: terraform fmt -check -recursive
+
+#       - name: Terraform initialize
+#         run: |
+#           terraform init \
+#             -reconfigure \
+#             -input=false \
+#             -backend-config=backend.hcl
+
+#       - name: Terraform validate
+#         run: terraform validate -no-color
+
+#       # -------------------------------------------------------
+#       # Terraform plan
+#       # -------------------------------------------------------
+
+#       - name: Terraform plan
+#         if: inputs.operation == 'plan'
+#         run: |
+#           terraform plan \
+#             -input=false \
+#             -no-color \
+#             -var-file=selected-client.tfvars \
+#             -out="${{ inputs.client }}.tfplan"
+
+#       - name: Convert plan to readable text
+#         if: inputs.operation == 'plan'
+#         run: |
+#           terraform show \
+#             -no-color \
+#             "${{ inputs.client }}.tfplan" \
+#             > "${{ inputs.client }}-plan.txt"
+
+#       - name: Upload Terraform plan
+#         if: inputs.operation == 'plan'
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: ${{ inputs.client }}-terraform-plan
+#           path: |
+#             ${{ inputs.client }}.tfplan
+#             ${{ inputs.client }}-plan.txt
+#           retention-days: 5
+#           if-no-files-found: error
+
+#       # -------------------------------------------------------
+#       # Terraform apply
+#       # -------------------------------------------------------
+
+#       - name: Create apply plan
+#         if: inputs.operation == 'apply'
+#         run: |
+#           terraform plan \
+#             -input=false \
+#             -no-color \
+#             -var-file=selected-client.tfvars \
+#             -out="${{ inputs.client }}-apply.tfplan"
+
+#       - name: Terraform apply
+#         if: inputs.operation == 'apply'
+#         run: |
+#           terraform apply \
+#             -input=false \
+#             -auto-approve \
+#             "${{ inputs.client }}-apply.tfplan"
+
+#       # -------------------------------------------------------
+#       # Terraform destroy
+#       # -------------------------------------------------------
+
+#       - name: Create destroy plan
+#         if: inputs.operation == 'destroy'
+#         run: |
+#           terraform plan \
+#             -destroy \
+#             -input=false \
+#             -no-color \
+#             -var-file=selected-client.tfvars \
+#             -out="${{ inputs.client }}-destroy.tfplan"
+
+#       - name: Terraform destroy
+#         if: inputs.operation == 'destroy'
+#         run: |
+#           terraform apply \
+#             -input=false \
+#             -auto-approve \
+#             "${{ inputs.client }}-destroy.tfplan"
+
+#       # -------------------------------------------------------
+#       # Cleanup
+#       # -------------------------------------------------------
+
+#       - name: Azure logout
+#         if: always()
+#        run: az logout  
+
+
+
 name: Terraform CD
 
 on:
@@ -42,8 +378,13 @@ env:
   TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
 
 jobs:
-  terraform:
-    name: Terraform ${{ inputs.operation }} - ${{ inputs.client }}
+
+  # ==========================================================
+  # JOB 1: TERRAFORM PLAN
+  # ==========================================================
+
+  terraform-plan:
+    name: Terraform plan - ${{ inputs.client }}
     runs-on: ubuntu-latest
 
     defaults:
@@ -51,9 +392,10 @@ jobs:
         shell: bash
 
     steps:
-      # -------------------------------------------------------
+
+      # --------------------------------------------------------
       # Checkout and Terraform setup
-      # -------------------------------------------------------
+      # --------------------------------------------------------
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -66,9 +408,9 @@ jobs:
       - name: Display Terraform version
         run: terraform version
 
-      # -------------------------------------------------------
+      # --------------------------------------------------------
       # Azure authentication
-      # -------------------------------------------------------
+      # --------------------------------------------------------
 
       - name: Azure login using Service Principal
         uses: azure/login@v2
@@ -87,41 +429,49 @@ jobs:
             --query "{subscription:name,subscriptionId:id,tenantId:tenantId}" \
             --output table
 
-      # -------------------------------------------------------
-      # Verify GitHub configuration
-      # -------------------------------------------------------
+      # --------------------------------------------------------
+      # Validate required configuration
+      # --------------------------------------------------------
 
       - name: Verify required GitHub variables and secrets
         run: |
+          FAILED=0
+
           if [ -z "${{ vars.BACKEND_RESOURCE_GROUP }}" ]; then
             echo "BACKEND_RESOURCE_GROUP is missing."
-            exit 1
+            FAILED=1
           fi
 
           if [ -z "${{ vars.BACKEND_STORAGE_ACCOUNT }}" ]; then
             echo "BACKEND_STORAGE_ACCOUNT is missing."
-            exit 1
+            FAILED=1
           fi
 
           if [ -z "${{ vars.BACKEND_CONTAINER }}" ]; then
             echo "BACKEND_CONTAINER is missing."
-            exit 1
+            FAILED=1
           fi
 
           if [ -z "${{ vars.ALERT_EMAIL_ADDRESS }}" ]; then
             echo "ALERT_EMAIL_ADDRESS is missing."
-            exit 1
+            FAILED=1
           fi
 
           if [ -z "${{ secrets.AZURE_BACKEND_ACCESS_KEY }}" ]; then
             echo "AZURE_BACKEND_ACCESS_KEY is missing."
-            exit 1
+            FAILED=1
           fi
 
           if [ -z "${{ secrets.TF_VAR_ADMIN_PASSWORD }}" ]; then
             echo "TF_VAR_ADMIN_PASSWORD is missing."
+            FAILED=1
+          fi
+
+          if [ "$FAILED" -ne 0 ]; then
             exit 1
           fi
+
+          echo "All required GitHub variables and secrets are available."
 
       - name: Validate alert email address
         run: |
@@ -129,15 +479,15 @@ jobs:
           ALERT_EMAIL="$(printf '%s' "$ALERT_EMAIL" | tr -d '\r' | xargs)"
 
           if [[ ! "$ALERT_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
-            echo "ALERT_EMAIL_ADDRESS is invalid."
+            echo "ALERT_EMAIL_ADDRESS has an invalid format."
             exit 1
           fi
 
-          echo "Alert email format is valid."
+          echo "Alert email address format is valid."
 
-      # -------------------------------------------------------
+      # --------------------------------------------------------
       # Generate backend configuration
-      # -------------------------------------------------------
+      # --------------------------------------------------------
 
       - name: Generate backend configuration
         run: |
@@ -156,16 +506,17 @@ jobs:
           echo "Backend container       : ${{ vars.BACKEND_CONTAINER }}"
           echo "Backend state key       : clients/${{ inputs.client }}/terraform.tfstate"
 
-      # -------------------------------------------------------
-      # Generate client tfvars safely
-      # -------------------------------------------------------
+      # --------------------------------------------------------
+      # Generate selected client tfvars
+      # --------------------------------------------------------
 
       - name: Generate client variable file
         run: |
           SOURCE_FILE="environments/${{ inputs.client }}/${{ inputs.client }}.tfvars.example"
 
           if [ ! -f "$SOURCE_FILE" ]; then
-            echo "Client variable file not found: $SOURCE_FILE"
+            echo "Client variable file was not found:"
+            echo "$SOURCE_FILE"
             exit 1
           fi
 
@@ -193,7 +544,7 @@ jobs:
             echo "alert_email_address = \"$ALERT_EMAIL\"" >> selected-client.tfvars
           fi
 
-          echo "Tenant ID and alert email were added to selected-client.tfvars."
+          echo "Client variable file generated successfully."
 
       - name: Format generated client variables
         run: terraform fmt selected-client.tfvars
@@ -206,19 +557,19 @@ jobs:
           if ! grep -Eq \
             '^tenant_id[[:space:]]*=[[:space:]]*"[0-9a-fA-F-]{36}"$' \
             selected-client.tfvars; then
-            echo "A valid tenant_id was not generated."
+            echo "A valid Azure tenant ID was not generated."
             exit 1
           fi
 
           if ! grep -Fq \
             "alert_email_address = \"$ALERT_EMAIL\"" \
             selected-client.tfvars; then
-            echo "The alert email was not correctly generated."
+            echo "The alert email address was not generated correctly."
             exit 1
           fi
 
           echo "Generated tenant ID is valid."
-          echo "Generated alert email is valid."
+          echo "Generated alert email address is valid."
 
       - name: Check generated files for placeholders
         run: |
@@ -226,15 +577,15 @@ jobs:
             'YOUR_|Your Tenant ID|your tenant id|your-tenant-id|your-real-tenant-id|Your Email Address|your Email address|your email address|Your Azure Subscription ID|Your backend resource group|Your Storage Account|placeholder|change_me' \
             backend.hcl selected-client.tfvars; then
 
-            echo "Placeholder values remain in generated files."
+            echo "Placeholder values remain in generated Terraform configuration."
             exit 1
           fi
 
           echo "No placeholder values remain."
 
-      # -------------------------------------------------------
-      # Terraform quality checks
-      # -------------------------------------------------------
+      # --------------------------------------------------------
+      # Terraform validation
+      # --------------------------------------------------------
 
       - name: Terraform format check
         run: terraform fmt -check -recursive
@@ -249,29 +600,30 @@ jobs:
       - name: Terraform validate
         run: terraform validate -no-color
 
-      # -------------------------------------------------------
-      # Terraform plan
-      # -------------------------------------------------------
+      # --------------------------------------------------------
+      # Create normal plan for plan/apply operations
+      # --------------------------------------------------------
 
-      - name: Terraform plan
-        if: inputs.operation == 'plan'
+      - name: Create Terraform plan
+        if: inputs.operation == 'plan' || inputs.operation == 'apply'
         run: |
           terraform plan \
             -input=false \
             -no-color \
+            -lock-timeout=10m \
             -var-file=selected-client.tfvars \
             -out="${{ inputs.client }}.tfplan"
 
-      - name: Convert plan to readable text
-        if: inputs.operation == 'plan'
+      - name: Convert Terraform plan to readable text
+        if: inputs.operation == 'plan' || inputs.operation == 'apply'
         run: |
           terraform show \
             -no-color \
             "${{ inputs.client }}.tfplan" \
             > "${{ inputs.client }}-plan.txt"
 
-      - name: Upload Terraform plan
-        if: inputs.operation == 'plan'
+      - name: Upload Terraform plan artifact
+        if: inputs.operation == 'plan' || inputs.operation == 'apply'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.client }}-terraform-plan
@@ -281,53 +633,218 @@ jobs:
           retention-days: 5
           if-no-files-found: error
 
-      # -------------------------------------------------------
-      # Terraform apply
-      # -------------------------------------------------------
+      # --------------------------------------------------------
+      # Create destroy plan
+      # --------------------------------------------------------
 
-      - name: Create apply plan
-        if: inputs.operation == 'apply'
-        run: |
-          terraform plan \
-            -input=false \
-            -no-color \
-            -var-file=selected-client.tfvars \
-            -out="${{ inputs.client }}-apply.tfplan"
-
-      - name: Terraform apply
-        if: inputs.operation == 'apply'
-        run: |
-          terraform apply \
-            -input=false \
-            -auto-approve \
-            "${{ inputs.client }}-apply.tfplan"
-
-      # -------------------------------------------------------
-      # Terraform destroy
-      # -------------------------------------------------------
-
-      - name: Create destroy plan
+      - name: Create Terraform destroy plan
         if: inputs.operation == 'destroy'
         run: |
           terraform plan \
             -destroy \
             -input=false \
             -no-color \
+            -lock-timeout=10m \
             -var-file=selected-client.tfvars \
             -out="${{ inputs.client }}-destroy.tfplan"
 
-      - name: Terraform destroy
+      - name: Convert destroy plan to readable text
         if: inputs.operation == 'destroy'
+        run: |
+          terraform show \
+            -no-color \
+            "${{ inputs.client }}-destroy.tfplan" \
+            > "${{ inputs.client }}-destroy-plan.txt"
+
+      - name: Upload Terraform destroy plan artifact
+        if: inputs.operation == 'destroy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.client }}-terraform-destroy-plan
+          path: |
+            ${{ inputs.client }}-destroy.tfplan
+            ${{ inputs.client }}-destroy-plan.txt
+          retention-days: 5
+          if-no-files-found: error
+
+      - name: Azure logout after plan
+        if: always()
+        run: az logout
+
+
+  # ==========================================================
+  # JOB 2: MANUAL APPROVAL AND TERRAFORM APPLY
+  # ==========================================================
+
+  terraform-apply:
+    name: Approve and apply - ${{ inputs.client }}
+
+    if: inputs.operation == 'apply'
+
+    needs:
+      - terraform-plan
+
+    runs-on: ubuntu-latest
+
+    # This environment activates Required Reviewers.
+    # Environment names must exactly match:
+    # client-a, client-b and client-c
+    environment:
+      name: ${{ inputs.client }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Azure login using Service Principal
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+
+      - name: Generate backend configuration
+        run: |
+          cat > backend.hcl <<EOF
+          resource_group_name  = "${{ vars.BACKEND_RESOURCE_GROUP }}"
+          storage_account_name = "${{ vars.BACKEND_STORAGE_ACCOUNT }}"
+          container_name       = "${{ vars.BACKEND_CONTAINER }}"
+          key                  = "clients/${{ inputs.client }}/terraform.tfstate"
+          EOF
+
+      - name: Terraform initialize
+        run: |
+          terraform init \
+            -reconfigure \
+            -input=false \
+            -backend-config=backend.hcl
+
+      - name: Download approved Terraform plan
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.client }}-terraform-plan
+          path: terraform-plan
+
+      - name: Verify downloaded plan
+        run: |
+          echo "Files downloaded for approved deployment:"
+          ls -la terraform-plan
+
+          if [ ! -f "terraform-plan/${{ inputs.client }}.tfplan" ]; then
+            echo "Approved Terraform plan file was not found."
+            exit 1
+          fi
+
+      - name: Terraform apply approved plan
         run: |
           terraform apply \
             -input=false \
             -auto-approve \
-            "${{ inputs.client }}-destroy.tfplan"
+            -lock-timeout=10m \
+            "terraform-plan/${{ inputs.client }}.tfplan"
 
-      # -------------------------------------------------------
-      # Cleanup
-      # -------------------------------------------------------
+      - name: Azure logout after apply
+        if: always()
+        run: az logout
 
-      - name: Azure logout
+
+  # ==========================================================
+  # JOB 3: MANUAL APPROVAL AND TERRAFORM DESTROY
+  # ==========================================================
+
+  terraform-destroy:
+    name: Approve and destroy - ${{ inputs.client }}
+
+    if: inputs.operation == 'destroy'
+
+    needs:
+      - terraform-plan
+
+    runs-on: ubuntu-latest
+
+    # Destroy also requires approval from the selected environment.
+    environment:
+      name: ${{ inputs.client }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Azure login using Service Principal
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+
+      - name: Generate backend configuration
+        run: |
+          cat > backend.hcl <<EOF
+          resource_group_name  = "${{ vars.BACKEND_RESOURCE_GROUP }}"
+          storage_account_name = "${{ vars.BACKEND_STORAGE_ACCOUNT }}"
+          container_name       = "${{ vars.BACKEND_CONTAINER }}"
+          key                  = "clients/${{ inputs.client }}/terraform.tfstate"
+          EOF
+
+      - name: Terraform initialize
+        run: |
+          terraform init \
+            -reconfigure \
+            -input=false \
+            -backend-config=backend.hcl
+
+      - name: Download approved destroy plan
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.client }}-terraform-destroy-plan
+          path: terraform-destroy-plan
+
+      - name: Verify downloaded destroy plan
+        run: |
+          echo "Files downloaded for approved destruction:"
+          ls -la terraform-destroy-plan
+
+          if [ ! -f "terraform-destroy-plan/${{ inputs.client }}-destroy.tfplan" ]; then
+            echo "Approved Terraform destroy plan was not found."
+            exit 1
+          fi
+
+      - name: Terraform destroy using approved plan
+        run: |
+          terraform apply \
+            -input=false \
+            -auto-approve \
+            -lock-timeout=10m \
+            "terraform-destroy-plan/${{ inputs.client }}-destroy.tfplan"
+
+      - name: Azure logout after destroy
         if: always()
         run: az logout
